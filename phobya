@@ -1,0 +1,432 @@
+-- ===== Services =====
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local Player = Players.LocalPlayer
+
+-- ===== ScreenGui =====
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+ScreenGui.Name = "pablex"
+ScreenGui.IgnoreGuiInset = true
+
+-- ===== MainFrame =====
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0.4, 0, 0.5, 0)
+MainFrame.Position = UDim2.new(0.3, 0, 0.25, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+-- ===== Drag Zone =====
+local MainDrag = Instance.new("Frame", MainFrame)
+MainDrag.Size = UDim2.new(1, 0, 0.1, 0)
+MainDrag.BackgroundTransparency = 1
+
+-- ===== ToggleButton =====
+local ToggleButton = Instance.new("TextButton", ScreenGui)
+ToggleButton.Size = UDim2.new(0, 100, 0, 40)
+ToggleButton.Position = UDim2.new(0.9, 0, 0.05, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+ToggleButton.Text = "Open"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextScaled = true
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0, 8)
+
+local ToggleDrag = Instance.new("Frame", ToggleButton)
+ToggleDrag.Size = UDim2.new(1, 0, 1, 0)
+ToggleDrag.BackgroundTransparency = 1
+
+-- ===== Buttons inside MainFrame =====
+local ESPToggle = Instance.new("TextButton", MainFrame)
+local AimbotToggle = Instance.new("TextButton", MainFrame)
+local FOVSlider = Instance.new("TextBox", MainFrame)
+local FpsPingToggle = Instance.new("TextButton", MainFrame)
+
+local buttons = {ESPToggle, AimbotToggle, FOVSlider, FpsPingToggle}
+local btnNames = {"ESP: OFF", "Aimbot: OFF", "FOV: 50", "FPS/Time/Ping: OFF"}
+
+for i, btn in pairs(buttons) do
+    btn.Size = UDim2.new(0.8, 0, 0.15, 0)
+    btn.Position = UDim2.new(0.1, 0, 0.1 + (i-1)*0.18, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    btn.Text = btnNames[i]
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextScaled = true
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+end
+
+-- ===== Variables =====
+local espEnabled = false
+local AimbotOn = false
+local FOVRadius = 50
+local fpsPingVisible = false
+local AimPart = "Head"
+local highlightColor = Color3.fromRGB(255,140,0)
+
+-- ===== Mini Stats Panel =====
+local StatsPanel = Instance.new("Frame", ScreenGui)
+StatsPanel.Size = UDim2.new(0, 220, 0, 35)
+StatsPanel.Position = UDim2.new(1, -230, 1, -45)
+StatsPanel.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+StatsPanel.BorderSizePixel = 0
+Instance.new("UICorner", StatsPanel).CornerRadius = UDim.new(0,6)
+StatsPanel.Visible = false
+
+local FPSLabel = Instance.new("TextLabel", StatsPanel)
+FPSLabel.Size = UDim2.new(0.33, 0, 1, 0)
+FPSLabel.BackgroundTransparency = 1
+FPSLabel.TextColor3 = Color3.fromRGB(0,0,0)
+FPSLabel.TextScaled = true
+FPSLabel.Font = Enum.Font.GothamBold
+FPSLabel.Text = "FPS: 0"
+
+local TimeLabel = Instance.new("TextLabel", StatsPanel)
+TimeLabel.Size = UDim2.new(0.34, 0, 1, 0)
+TimeLabel.Position = UDim2.new(0.33, 0, 0, 0)
+TimeLabel.BackgroundTransparency = 1
+TimeLabel.TextColor3 = Color3.fromRGB(0,0,0)
+TimeLabel.TextScaled = true
+TimeLabel.Font = Enum.Font.GothamBold
+TimeLabel.Text = "Time: 00:00:00"
+
+local PingLabel = Instance.new("TextLabel", StatsPanel)
+PingLabel.Size = UDim2.new(0.33, 0, 1, 0)
+PingLabel.Position = UDim2.new(0.67, 0, 0, 0)
+PingLabel.BackgroundTransparency = 1
+PingLabel.TextColor3 = Color3.fromRGB(0,0,0)
+PingLabel.TextScaled = true
+PingLabel.Font = Enum.Font.GothamBold
+PingLabel.Text = "Ping: 0ms"
+
+-- ===== FOV Circle =====
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Radius = FOVRadius
+FOVCircle.Thickness = 1.5
+FOVCircle.Transparency = 0.4
+FOVCircle.Filled = false
+FOVCircle.Color = highlightColor
+FOVCircle.Visible = false
+
+-- ===== ESP Functions =====
+local function createHighlight(char)
+    if char and not char:FindFirstChild("Pablex_Highlight") then
+        local hl = Instance.new("Highlight", char)
+        hl.Name = "Pablex_Highlight"
+        hl.FillTransparency = 1
+        hl.OutlineTransparency = 0
+        hl.OutlineColor = highlightColor
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Adornee = char
+    end
+end
+
+local function removeHighlight(char)
+    local hl = char and char:FindFirstChild("Pablex_Highlight")
+    if hl then hl:Destroy() end
+end
+
+local function setupPlayer(plr)
+    if plr ~= Player then
+        if plr.Character then createHighlight(plr.Character) end
+        plr.CharacterAdded:Connect(createHighlight)
+        plr.CharacterRemoving:Connect(removeHighlight)
+    end
+end
+
+Players.PlayerAdded:Connect(function(p)
+    if espEnabled then setupPlayer(p) end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    removeHighlight(p.Character)
+end)
+
+-- ===== Aimbot Functions =====
+local function IsVisible(part)
+    local origin = Camera.CFrame.Position
+    local dir = (part.Position - origin)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {Player.Character, part.Parent}
+    local ray = workspace:Raycast(origin, dir, params)
+    return not ray
+end
+
+local function GetClosestPlayer()
+    local closest, shortest = nil, FOVRadius
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= Player and plr.Character and plr.Character:FindFirstChild(AimPart) then
+            local part = plr.Character[AimPart]
+            local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local dist = (Vector2.new(pos.X, pos.Y) - Camera.ViewportSize/2).Magnitude
+                if dist < shortest and IsVisible(part) then
+                    shortest = dist
+                    closest = plr
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- ===== Update Loop =====
+local lastUpdate = tick()
+local fpsCounter = 0
+
+RunService.RenderStepped:Connect(function()
+    -- Stats Panel
+    if fpsPingVisible then
+        fpsCounter += 1
+        if tick() - lastUpdate >= 1 then
+            FPSLabel.Text = "⚡ FPS: "..fpsCounter
+            fpsCounter = 0
+            lastUpdate = tick()
+        end
+        TimeLabel.Text = "🕒 Time: "..os.date("%H:%M:%S")
+        PingLabel.Text = "🌐Ping: "..math.floor(Player:GetNetworkPing()*1000).."ms"
+    end
+
+    -- Aimbot FOV
+    FOVCircle.Position = Camera.ViewportSize/2
+    FOVCircle.Radius = FOVRadius
+    FOVCircle.Visible = AimbotOn
+
+    if AimbotOn then
+        local target = GetClosestPlayer()
+        if target and target.Character and target.Character:FindFirstChild(AimPart) then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character[AimPart].Position)
+        end
+    end
+end)
+
+-- ===== Button Logic =====
+ESPToggle.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    ESPToggle.Text = "ESP: "..(espEnabled and "ON" or "OFF")
+    for _, p in pairs(Players:GetPlayers()) do
+        if espEnabled then
+            setupPlayer(p)
+        else
+            removeHighlight(p.Character)
+        end
+    end
+end)
+
+AimbotToggle.MouseButton1Click:Connect(function()
+    AimbotOn = not AimbotOn
+    AimbotToggle.Text = "Aimbot: "..(AimbotOn and "ON" or "OFF")
+end)
+
+FOVSlider.FocusLost:Connect(function()
+    local value = tonumber(FOVSlider.Text:match("%d+"))
+    if value and value >= 20 and value <= 300 then
+        FOVRadius = value
+        FOVCircle.Radius = value
+        FOVSlider.Text = "FOV: "..value
+    else
+        FOVSlider.Text = "FOV: "..FOVRadius
+    end
+end)
+
+FpsPingToggle.MouseButton1Click:Connect(function()
+    fpsPingVisible = not fpsPingVisible
+    StatsPanel.Visible = fpsPingVisible
+    FpsPingToggle.Text = "FPS/Time/Ping: "..(fpsPingVisible and "ON" or "OFF")
+end)
+
+-- ===== GUI Toggle =====
+local guiOpen = false
+ToggleButton.MouseButton1Click:Connect(function()
+    guiOpen = not guiOpen
+    MainFrame.Visible = guiOpen
+    ToggleButton.Text = guiOpen and "Close" or "Open"
+end)
+
+-- ===== Player Info =====
+local maxDistance = 3000
+local playerInfoFolder = Instance.new("Folder", ScreenGui)
+playerInfoFolder.Name = "PlayerInfos"
+
+local function createPlayerInfo(plr)
+    if plr == Player then return end
+
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Size = UDim2.new(0, 180, 0, 30) -- صغر الحجم
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.TextScaled = false
+    infoLabel.TextSize = 12 -- صغر الكتابة
+    infoLabel.RichText = true
+    infoLabel.Font = Enum.Font.GothamBold
+    infoLabel.TextColor3 = Color3.fromRGB(255,255,255)
+    infoLabel.TextWrapped = true
+    infoLabel.Parent = playerInfoFolder
+    infoLabel.Visible = espEnabled
+
+    RunService.RenderStepped:Connect(function()
+        if not espEnabled then
+            infoLabel.Visible = false
+            return
+        end
+
+        if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local hum = plr.Character:FindFirstChild("Humanoid")
+            local hp = hum and math.floor(hum.Health) or 0
+            local maxHp = hum and math.floor(hum.MaxHealth) or 100
+
+            local hrp = plr.Character.HumanoidRootPart
+            local pos, vis = Camera:WorldToViewportPoint(hrp.Position + Vector3.new(0,3,0)) -- فوق الرأس
+
+            local myRoot = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+            if not myRoot then return end
+
+            local distance = (hrp.Position - myRoot.Position).Magnitude
+
+            if vis and distance <= maxDistance and hp > 0 then
+                infoLabel.Position = UDim2.new(0, pos.X - 90, 0, pos.Y - 30) -- فوق الرأس
+                infoLabel.Text =
+                    "🧑 <font color='#FFFFFF'>"..plr.Name.."</font>\n" ..
+                    "❤️ <font color='#FF0000'>"..hp.."/"..maxHp.."</font>  " ..
+                    "📏 <font color='#ffde00'>"..math.floor(distance).."m</font>"
+                infoLabel.Visible = true
+            else
+                infoLabel.Visible = false
+            end
+        else
+            infoLabel.Visible = false
+        end
+    end)
+end
+
+for _, plr in pairs(Players:GetPlayers()) do
+    createPlayerInfo(plr)
+end
+
+Players.PlayerAdded:Connect(createPlayerInfo)
+
+Players.PlayerRemoving:Connect(function(plr)
+    local lbl = playerInfoFolder:FindFirstChild(plr.Name)
+    if lbl then lbl:Destroy() end
+end)
+--===== Gradient MainFrame =====
+local MainFrameGradient = Instance.new("UIGradient", MainFrame)
+MainFrameGradient.Rotation = 45
+MainFrameGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 140, 0)), -- Orange
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 20))   -- Black
+})
+--===== Gradient for All Buttons =====
+for _, btn in pairs(buttons) do
+    local g = Instance.new("UIGradient", btn)
+    g.Rotation = 45
+    g.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 140, 0)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 20))
+    })
+end
+--===== Gradient for Toggle Button =====
+local ToggleGradient = Instance.new("UIGradient", ToggleButton)
+ToggleGradient.Rotation = 45
+ToggleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 140, 0)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 20))
+})
+-- ===== Password System =====
+local CorrectPassword = "mrphobya"   -- <<< غيرها للباسوورد لي بغيتي
+
+local PasswordGui = Instance.new("ScreenGui", game.CoreGui)
+PasswordGui.Name = "PasswordGui"
+
+local PasswordFrame = Instance.new("Frame", PasswordGui)
+PasswordFrame.Size = UDim2.new(0, 300, 0, 150)
+PasswordFrame.Position = UDim2.new(0.5, -150, 0.5, -75)
+PasswordFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Instance.new("UICorner", PasswordFrame).CornerRadius = UDim.new(0, 10)
+
+local Gradient = Instance.new("UIGradient", PasswordFrame)
+Gradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 140, 0)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 20))
+})
+Gradient.Rotation = 45
+
+local Title = Instance.new("TextLabel", PasswordFrame)
+Title.Size = UDim2.new(1,0,0.3,0)
+Title.BackgroundTransparency = 1
+Title.Text = "Enter Password"
+Title.Font = Enum.Font.GothamBold
+Title.TextScaled = true
+Title.TextColor3 = Color3.fromRGB(255,255,255)
+
+local PasswordBox = Instance.new("TextBox", PasswordFrame)
+PasswordBox.Size = UDim2.new(0.8, 0, 0.3, 0)
+PasswordBox.Position = UDim2.new(0.1,0,0.35,0)
+PasswordBox.PlaceholderText = "Password..."
+PasswordBox.Text = ""
+PasswordBox.TextColor3 = Color3.fromRGB(255,255,255)
+PasswordBox.BackgroundColor3 = Color3.fromRGB(40,40,40)
+PasswordBox.ClearTextOnFocus = false
+Instance.new("UICorner", PasswordBox).CornerRadius = UDim.new(0, 8)
+
+local Button = Instance.new("TextButton", PasswordFrame)
+Button.Size = UDim2.new(0.8,0,0.25,0)
+Button.Position = UDim2.new(0.1,0,0.7,0)
+Button.Text = "ENTER"
+Button.Font = Enum.Font.GothamBold
+Button.TextColor3 = Color3.fromRGB(255,255,255)
+Button.BackgroundColor3 = Color3.fromRGB(50,50,50)
+Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 8)
+
+local BtnGrad = Instance.new("UIGradient", Button)
+BtnGrad.Color = Gradient.Color
+BtnGrad.Rotation = 45
+
+-- عند الضغط على ENTER
+Button.MouseButton1Click:Connect(function()
+	if PasswordBox.Text == CorrectPassword then
+		PasswordGui:Destroy()       -- يخفي صفحة الباسوورد
+		ScreenGui.Enabled = true    -- يفتح واجهتك الأصلية
+	else
+		Button.Text = "Wrong!"
+		wait(0.6)
+		Button.Text = "ENTER"
+	end
+end)
+
+-- نخفي الواجهة الأصلية حتى يكتب الباسوورد
+ScreenGui.Enabled = false
+-- ===== Variables =====
+local Player = game.Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local staminaOn = false
+
+-- ===== Button Creation =====
+local StaminaToggle = Instance.new("TextButton", MainFrame)
+StaminaToggle.Size = UDim2.new(0,360,0,45)
+StaminaToggle.Position = UDim2.new(0.5,-180,0.13 + 4*0.18,0)
+StaminaToggle.BackgroundColor3 = Color3.fromRGB(200,0,0)
+StaminaToggle.Text = "Infinity Stamina: OFF"
+StaminaToggle.TextScaled = true
+StaminaToggle.Font = Enum.Font.Ubuntu
+StaminaToggle.TextColor3 = Color3.fromRGB(255,255,255)
+Instance.new("UICorner", StaminaToggle).CornerRadius = UDim.new(0,8)
+
+-- Gradient
+local g = Instance.new("UIGradient", StaminaToggle)
+g.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(200,0,0)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(0,0,0))
+})
+g.Rotation = 45
+
+-- Glow
+local glow = Instance.new("UIStroke", StaminaToggle)
+glow.Color = Color3.fromRGB(0,0,0)
+glow.Thickness = 3
+glow.Transparency = 0.5
+glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Outer
+
+
+
